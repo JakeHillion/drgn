@@ -3103,16 +3103,6 @@ void drgn_type_iterator_destroy(struct drgn_type_iterator *iter);
 struct drgn_error *drgn_type_iterator_next(struct drgn_type_iterator *iter,
 					   struct drgn_qualified_type **ret);
 
-struct drgn_error *
-drgn_oil_type_iterator_create(struct drgn_program *prog,
-			      struct drgn_type_iterator **ret);
-
-struct drgn_error *
-drgn_oil_type_iterator_next(struct drgn_type_iterator *iter,
-			    struct drgn_qualified_type **type_ret,
-			    uintptr_t **function_addrs_ret,
-			    size_t *function_addrs_len_ret);
-
 struct drgn_func_iterator;
 
 struct drgn_error *drgn_func_iterator_create(struct drgn_program *prog,
