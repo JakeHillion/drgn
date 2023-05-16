@@ -3468,48 +3468,75 @@ struct drgn_error *drgn_module_find_dwarf_scopes(struct drgn_module *module,
 	if (dwarf_getaranges(dwarf, &aranges, &naranges) < 0)
 		return drgn_error_libdw();
 
-	struct drgn_dwarf_die_iterator it;
-	bool children;
-	size_t subtree;
-	Dwarf_Off offset;
+  /* Lookup the pc in the aranges to quickly locate the CU. */
+	Dwarf_Off offset = 0;
+	Dwarf_Die cu_die = { 0 };
 	if (dwarf_getarangeinfo(dwarf_getarange_addr(aranges, pc), NULL, NULL,
 				&offset) >= 0) {
-		drgn_dwarf_die_iterator_init(&it, dwarf);
-		Dwarf_Die *cu_die = dwarf_die_vector_append_entry(&it.dies);
-		if (!cu_die) {
-			err = &drgn_enomem;
-			goto err;
+		if (!dwarf_offdie(dwarf, offset, &cu_die)) {
+			return drgn_error_libdw();
 		}
-		if (!dwarf_offdie(dwarf, offset, cu_die)) {
-			err = drgn_error_libdw();
-			goto err;
-		}
-		if (dwarf_next_unit(dwarf, offset - dwarf_cuoffset(cu_die),
-				    &it.next_cu_off, NULL, NULL, NULL, NULL,
-				    NULL, NULL, NULL)) {
-			err = drgn_error_libdw();
-			goto err;
-		}
-		it.cu_end = ((const char *)cu_die->addr
-			     - dwarf_dieoffset(cu_die)
-			     + it.next_cu_off);
-		children = true;
-		subtree = 1;
 	} else {
 		/*
 		 * Range was not found. .debug_aranges could be missing or
 		 * incomplete, so fall back to checking each CU.
 		 */
-		drgn_dwarf_die_iterator_init(&it, dwarf);
-		children = false;
-		subtree = 0;
+		int ret = 0;
+		Dwarf_CU *cu = NULL;
+		while (!(ret = dwarf_get_units(dwarf, cu, &cu, NULL, NULL, &cu_die, NULL))) {
+			int r = dwarf_haspc(&cu_die, pc);
+			if (r < 0) {
+				return drgn_error_libdw();
+			} else if (r > 0) {
+				break;
+			}
+		}
+
+		if (ret < 0) {
+			return drgn_error_libdw();
+		} else if (ret > 0) {
+			return &drgn_not_found;
+		}
 	}
 
+	/* Swap the CU with its split unit, in case of Split Dwarf*/
+	uint8_t unit_type = 0;
+	if (dwarf_cu_info(cu_die.cu, NULL, &unit_type, NULL, NULL, NULL, NULL, NULL)) {
+			return drgn_error_libdw();
+	}
+
+	if (unit_type == DW_UT_skeleton) {
+		if (dwarf_cu_info(cu_die.cu, NULL, NULL, NULL, &cu_die, NULL, NULL, NULL)) {
+			return drgn_error_libdw();
+		}
+
+		dwarf = dwarf_cu_getdwarf(cu_die.cu);
+		offset = dwarf_dieoffset(&cu_die);
+	}
+
+	/* Prepare iterator to traverse CU's children. */
+	struct drgn_dwarf_die_iterator it;
+	drgn_dwarf_die_iterator_init(&it, dwarf);
+	if (!dwarf_die_vector_append(&it.dies, &cu_die)) {
+		err = &drgn_enomem;
+		goto err;
+	}
+
+	if (dwarf_next_unit(dwarf, offset - dwarf_cuoffset(&cu_die),
+					&it.next_cu_off, NULL, NULL, NULL, NULL,
+					NULL, NULL, NULL)) {
+		err = drgn_error_libdw();
+		goto err;
+	}
+	it.cu_end = ((const char *)cu_die.addr
+					- dwarf_dieoffset(&cu_die)
+					+ it.next_cu_off);
+
 	/* Now find DIEs containing the PC. */
-	while (!(err = drgn_dwarf_die_iterator_next(&it, children, subtree))) {
+	size_t subtree = 1;
+	while (!(err = drgn_dwarf_die_iterator_next(&it, true, subtree))) {
 		int r = dwarf_haspc(&it.dies.data[it.dies.size - 1], pc);
 		if (r > 0) {
-			children = true;
 			subtree = it.dies.size;
 		} else if (r < 0) {
 			err = drgn_error_libdw();
