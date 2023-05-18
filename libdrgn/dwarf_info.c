@@ -3830,16 +3830,16 @@ static struct drgn_error *drgn_dwarf5_location_list(struct drgn_elf_file *file,
 {
 	struct drgn_error *err;
 
-	if (!file->scns[DRGN_SCN_DEBUG_LOC]) {
+	if (!file->scns[DRGN_SCN_DEBUG_LOCLISTS]) {
 		return drgn_error_create(DRGN_ERROR_OTHER,
 					 "loclist without .debug_loclists section");
 	}
-	err = drgn_elf_file_cache_section(file, DRGN_SCN_DEBUG_LOC);
+	err = drgn_elf_file_cache_section(file, DRGN_SCN_DEBUG_LOCLISTS);
 	if (err)
 		return err;
 	struct drgn_elf_file_section_buffer buffer;
 	drgn_elf_file_section_buffer_init_index(&buffer, file,
-						DRGN_SCN_DEBUG_LOC);
+						DRGN_SCN_DEBUG_LOCLISTS);
 	if (offset > buffer.bb.end - buffer.bb.pos) {
 		return drgn_error_create(DRGN_ERROR_OTHER,
 					 "loclist is out of bounds");
@@ -3867,7 +3867,7 @@ static struct drgn_error *drgn_dwarf5_location_list(struct drgn_elf_file *file,
 				return err;
 			base_valid = true;
 			break;
-		case DW_LLE_startx_endx: {
+		case DW_LLE_startx_endx:
 			if ((err = drgn_dwarf_next_addrx(&buffer.bb, file,
 							 cu_die, address_size,
 							 &addr_base, &start)) ||
@@ -3876,12 +3876,10 @@ static struct drgn_error *drgn_dwarf5_location_list(struct drgn_elf_file *file,
 							 &addr_base, &length)))
 				return err;
 			length -= start;
-		uint16_t myexpr_size;
 counted_location_description:
-			if ((err = binary_buffer_next_u16(&buffer.bb,
-							      &myexpr_size)))
+			if ((err = binary_buffer_next_uleb128(&buffer.bb,
+							      &expr_size)))
 				return err;
-			expr_size = myexpr_size;
 			if (expr_size > buffer.bb.end - buffer.bb.pos) {
 				return binary_buffer_error(&buffer.bb,
 							   "location description size is out of bounds");
@@ -3893,18 +3891,14 @@ counted_location_description:
 			}
 			buffer.bb.pos += expr_size;
 			break;
-		}
-		case DW_LLE_startx_length: {
-			uint32_t mylength;
+		case DW_LLE_startx_length:
 			if ((err = drgn_dwarf_next_addrx(&buffer.bb, file,
 							 cu_die, address_size,
 							 &addr_base, &start)) ||
-			    (err = binary_buffer_next_u32(&buffer.bb,
-							      &mylength)))
+			    (err = binary_buffer_next_uleb128(&buffer.bb,
+							      &length)))
 				return err;
-				length = mylength;
 			goto counted_location_description;
-		}
 		case DW_LLE_offset_pair:
 			if ((err = binary_buffer_next_uleb128(&buffer.bb,
 							      &start)) ||
@@ -3998,9 +3992,9 @@ static struct drgn_error *drgn_dwarf4_location_list(struct drgn_elf_file *file,
 	for (;;) {
 		uint64_t start, end;
 		if ((err = binary_buffer_next_uint(&buffer.bb, address_size,
-							&start)) ||
-				(err = binary_buffer_next_uint(&buffer.bb, address_size,
-							&end)))
+						   &start)) ||
+		    (err = binary_buffer_next_uint(&buffer.bb, address_size,
+						   &end)))
 			return err;
 		if (start == 0 && end == 0) {
 			*expr_ret = NULL;
@@ -4019,11 +4013,11 @@ static struct drgn_error *drgn_dwarf4_location_list(struct drgn_elf_file *file,
 			}
 			uint16_t expr_size;
 			if ((err = binary_buffer_next_u16(&buffer.bb,
-								&expr_size)))
+							  &expr_size)))
 				return err;
 			if (expr_size > buffer.bb.end - buffer.bb.pos) {
 				return binary_buffer_error(&buffer.bb,
-								"location description size is out of bounds");
+							   "location description size is out of bounds");
 			}
 			if (base + start <= pc && pc < base + end) {
 				*expr_ret = buffer.bb.pos;
@@ -4082,20 +4076,10 @@ drgn_dwarf_location(struct drgn_elf_file *file, Dwarf_Attribute *attr,
 							 expr_ret,
 							 expr_size_ret);
 		} else {
-			uint8_t unit_type;
-			dwarf_cu_info(cu_die.cu, NULL, &unit_type, NULL, NULL, NULL, NULL, NULL);
-
-			if (unit_type == DW_UT_split_compile) {
-				return drgn_dwarf5_location_list(file, offset, &cu_die,
-								address_size, pc.value,
-								expr_ret,
-								expr_size_ret);
-			} else {
-				return drgn_dwarf4_location_list(file, offset, &cu_die,
-								address_size, pc.value,
-								expr_ret,
-								expr_size_ret);
-			}
+			return drgn_dwarf4_location_list(file, offset, &cu_die,
+							 address_size, pc.value,
+							 expr_ret,
+							 expr_size_ret);
 		}
 	}
 	default: {
