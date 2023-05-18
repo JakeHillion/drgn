@@ -3960,6 +3960,115 @@ counted_location_description:
 	}
 }
 
+static struct drgn_error *drgn_dwarf4_split_location_list(struct drgn_elf_file *file,
+						    Dwarf_Word offset,
+						    Dwarf_Die *cu_die,
+						    uint8_t address_size,
+						    uint64_t pc,
+						    const char **expr_ret,
+						    size_t *expr_size_ret)
+{
+	struct drgn_error *err;
+
+	if (!file->scns[DRGN_SCN_DEBUG_LOC]) {
+		return drgn_error_create(DRGN_ERROR_OTHER,
+					 "loclist without .debug_loclists section");
+	}
+	err = drgn_elf_file_cache_section(file, DRGN_SCN_DEBUG_LOC);
+	if (err)
+		return err;
+	struct drgn_elf_file_section_buffer buffer;
+	drgn_elf_file_section_buffer_init_index(&buffer, file,
+						DRGN_SCN_DEBUG_LOC);
+	if (offset > buffer.bb.end - buffer.bb.pos) {
+		return drgn_error_create(DRGN_ERROR_OTHER,
+					 "loclist is out of bounds");
+	}
+	buffer.bb.pos += offset;
+
+	const char *addr_base = NULL;
+	uint64_t base;
+	bool base_valid = false;
+	/* Default is unknown. May be overridden by DW_LLE_default_location. */
+	*expr_ret = NULL;
+	*expr_size_ret = 0;
+	for (;;) {
+		uint8_t kind;
+		if ((err = binary_buffer_next_u8(&buffer.bb, &kind)))
+			return err;
+
+		uint64_t start, end;
+		uint32_t length;
+		uint16_t expr_size;
+		switch (kind) {
+			case DW_LLE_end_of_list:
+				return NULL;
+			case DW_LLE_base_addressx:
+				if ((err = drgn_dwarf_next_addrx(&buffer.bb, file,
+								cu_die, address_size,
+								&addr_base, &base)))
+					return err;
+				base_valid = true;
+				break;
+			case DW_LLE_startx_endx:
+				if ((err = drgn_dwarf_next_addrx(&buffer.bb, file,
+								cu_die, address_size,
+								&addr_base, &start)) ||
+						(err = drgn_dwarf_next_addrx(&buffer.bb, file,
+								cu_die, address_size,
+								&addr_base, &end)))
+					return err;
+				length = end - start;
+	counted_location_description:
+				if ((err = binary_buffer_next_u16(&buffer.bb,
+											&expr_size)))
+					return err;
+				if (expr_size > buffer.bb.end - buffer.bb.pos) {
+					return binary_buffer_error(&buffer.bb,
+									"location description size is out of bounds");
+				}
+				if (pc >= start && pc - start < length) {
+					*expr_ret = buffer.bb.pos;
+					*expr_size_ret = expr_size;
+					return NULL;
+				}
+				buffer.bb.pos += expr_size;
+				break;
+			case DW_LLE_startx_length:
+				if ((err = drgn_dwarf_next_addrx(&buffer.bb, file,
+								cu_die, address_size,
+								&addr_base, &start)) ||
+						(err = binary_buffer_next_u32(&buffer.bb,
+											&length)))
+					return err;
+				goto counted_location_description;
+			case DW_LLE_offset_pair: {
+				uint32_t small_start, small_end;
+				if ((err = binary_buffer_next_u32(&buffer.bb,
+											&small_start)) ||
+						(err = binary_buffer_next_u32(&buffer.bb,
+											&small_end)))
+					return err;
+				start = small_start; end = small_end;
+				length = end - start;
+				if (!base_valid) {
+					Dwarf_Addr low_pc;
+					if (dwarf_lowpc(cu_die, &low_pc))
+						return drgn_error_libdw();
+					base = low_pc;
+					base_valid = true;
+				}
+				start += base;
+				goto counted_location_description;
+			}
+			default:
+				return binary_buffer_error(&buffer.bb,
+								"unknown location list entry kind %#" PRIx8,
+								kind);
+		}
+	}
+}
+
 static struct drgn_error *drgn_dwarf4_location_list(struct drgn_elf_file *file,
 						    Dwarf_Word offset,
 						    Dwarf_Die *cu_die,
@@ -4076,10 +4185,22 @@ drgn_dwarf_location(struct drgn_elf_file *file, Dwarf_Attribute *attr,
 							 expr_ret,
 							 expr_size_ret);
 		} else {
-			return drgn_dwarf4_location_list(file, offset, &cu_die,
-							 address_size, pc.value,
-							 expr_ret,
-							 expr_size_ret);
+			uint8_t unit_type = 0;
+			if (dwarf_cu_info(cu_die.cu, NULL, &unit_type, NULL, NULL, NULL, NULL, NULL)) {
+				return drgn_error_libdw();
+			}
+
+			if (unit_type == DW_UT_split_compile) {
+				return drgn_dwarf4_split_location_list(file, offset, &cu_die,
+								address_size, pc.value,
+								expr_ret,
+								expr_size_ret);
+			} else {
+				return drgn_dwarf4_location_list(file, offset, &cu_die,
+								address_size, pc.value,
+								expr_ret,
+								expr_size_ret);
+			}
 		}
 	}
 	default: {
