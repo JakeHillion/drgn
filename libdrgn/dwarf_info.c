@@ -614,6 +614,19 @@ drgn_dwarf_index_read_module(struct drgn_dwarf_index_state *state,
 	return err;
 }
 
+struct drgn_error *
+drgn_dwarf_index_read_file(struct drgn_dwarf_index_state *state,
+			     struct drgn_elf_file *file)
+{
+	struct drgn_error *err;
+	err = drgn_dwarf_index_read_cus(state, file, DRGN_SCN_DEBUG_INFO);
+	if (!err && file->scn_data[DRGN_SCN_DEBUG_TYPES]) {
+		err = drgn_dwarf_index_read_cus(state, file,
+						DRGN_SCN_DEBUG_TYPES);
+	}
+	return err;
+}
+
 static struct drgn_error *dw_form_to_insn(struct drgn_dwarf_index_cu *cu,
 					  struct binary_buffer *bb,
 					  uint64_t form, uint8_t *insn_ret)
