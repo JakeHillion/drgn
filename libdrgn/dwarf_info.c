@@ -108,6 +108,7 @@ struct drgn_dwarf_index_cu {
 	/** Number of abbreviation codes. */
 	// Reused to specify an abbrev offset as well...
 	size_t num_abbrev_decls;
+	uint64_t abbrev_contrib_offset;
 	/**
 	 * Buffer of @ref drgn_dwarf_index_abbrev_insn instructions for all
 	 * abbreviation codes.
@@ -1297,9 +1298,7 @@ static struct drgn_error *read_cu(struct drgn_dwarf_index_cu_buffer *buffer)
 							   &debug_abbrev_offset)))
 			return err;
 	}
-	// TODO: This is super sketchy and we might be lucky this always work...
-	if (debug_abbrev_offset == 0)
-		debug_abbrev_offset += buffer->cu->num_abbrev_decls;
+	debug_abbrev_offset += buffer->cu->abbrev_contrib_offset;
 	if (debug_abbrev_offset >
 	    buffer->cu->file->scn_data[DRGN_SCN_DEBUG_ABBREV]->d_size) {
 		return binary_buffer_error(&buffer->bb,
@@ -2943,6 +2942,10 @@ drgn_dwarf_info_update_index(struct drgn_dwarf_index_state *state)
 			Dwarf_Die tmp;
 			Dwarf_Off abbrev_off = 0;
 			dwarf_cu_die(pending_cu->cudie, &tmp, NULL, &abbrev_off, NULL, NULL, NULL, NULL);
+
+			Dwarf_Off abbrev_contrib_offset = 0;
+			dwarf_cu_abbrev_contrib_offset(pending_cu->cudie, &abbrev_contrib_offset);
+
 			cus->data[cus->size++] = (struct drgn_dwarf_index_cu){
 				.file = pending_cu->file,
 				.buf = pending_cu->buf,
@@ -2954,6 +2957,7 @@ drgn_dwarf_info_update_index(struct drgn_dwarf_index_state *state)
 				.num_file_names =
 					array_size(no_file_name_hashes),
 				.num_abbrev_decls = abbrev_off,
+				.abbrev_contrib_offset = abbrev_contrib_offset,
 				.str_offsets = dwarf_cu_str_off(pending_cu->cudie),
 			};
 		}
