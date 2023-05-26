@@ -529,9 +529,17 @@ drgn_dwarf_index_read_cus(struct drgn_dwarf_index_state *state,
 	while ((ret = dwarf_next_unit(file->dwarf, off, &next_off, &header_size,
 				      NULL, NULL, NULL, &offset_size,
 				      v4_type_signaturep, NULL)) == 0) {
-		Dwarf_Die cudie, subdie;
-		if (!dwarf_offdie(file->dwarf, off + header_size, &cudie) ||
-		    dwarf_cu_info(cudie.cu, NULL, NULL, NULL, &subdie, NULL,
+		Dwarf_Die cudie;
+		if (v4_type_signaturep) {
+			if (!dwarf_offdie_types(file->dwarf, off + header_size, &cudie))
+				return drgn_error_libdw();
+		} else {
+			if (!dwarf_offdie(file->dwarf, off + header_size, &cudie))
+				return drgn_error_libdw();
+		}
+
+		Dwarf_Die subdie;
+		if (dwarf_cu_info(cudie.cu, NULL, NULL, NULL, &subdie, NULL,
 				  NULL, NULL))
 			return drgn_error_libdw();
 
@@ -619,8 +627,8 @@ struct drgn_error *
 drgn_dwarf_index_read_file(struct drgn_dwarf_index_state *state,
 			     struct drgn_elf_file *file)
 {
-	struct drgn_error *err;
-	err = drgn_dwarf_index_read_cus(state, file, DRGN_SCN_DEBUG_INFO);
+	struct drgn_error *err = NULL;
+	// err = drgn_dwarf_index_read_cus(state, file, DRGN_SCN_DEBUG_INFO);
 	if (!err && file->scn_data[DRGN_SCN_DEBUG_TYPES]) {
 		err = drgn_dwarf_index_read_cus(state, file,
 						DRGN_SCN_DEBUG_TYPES);
