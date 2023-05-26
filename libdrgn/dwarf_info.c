@@ -4009,7 +4009,10 @@ static struct drgn_error *drgn_dwarf4_split_location_list(struct drgn_elf_file *
 		return drgn_error_create(DRGN_ERROR_OTHER,
 					 "loclist is out of bounds");
 	}
+	Dwarf_Off locs_base = 0;
+	assert(dwarf_cu_locs_base(cu_die->cu, &locs_base) == 0);
 	buffer.bb.pos += offset;
+	buffer.bb.pos += locs_base;
 
 	const char *addr_base = NULL;
 	uint64_t base;
