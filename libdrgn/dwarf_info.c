@@ -3534,10 +3534,11 @@ struct drgn_error *drgn_module_find_dwarf_scopes(struct drgn_module *module,
 		if (dwarf_cu_info(cu_die.cu, NULL, NULL, NULL, &cu_die, NULL, NULL, NULL)) {
 			return drgn_error_libdw();
 		}
-
-		dwarf = dwarf_cu_getdwarf(cu_die.cu);
-		offset = dwarf_dieoffset(&cu_die);
 	}
+
+	/* Update dwarf and offset, for if the cu was a skeleton unit */
+	dwarf = dwarf_cu_getdwarf(cu_die.cu);
+	offset = dwarf_dieoffset(&cu_die);
 
 	/* Prepare iterator to traverse CU's children. */
 	struct drgn_dwarf_die_iterator it;
