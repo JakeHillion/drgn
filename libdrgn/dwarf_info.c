@@ -628,6 +628,10 @@ drgn_dwarf_index_read_file(struct drgn_dwarf_index_state *state,
 			     struct drgn_elf_file *file)
 {
 	struct drgn_error *err = NULL;
+	/* This function is only used for reading dwp files.
+	 * .debug_info already got processed during the `join`,
+	 * so skip the .debug_info section to avoid double-indexing.
+	 */
 	// err = drgn_dwarf_index_read_cus(state, file, DRGN_SCN_DEBUG_INFO);
 	if (!err && file->scn_data[DRGN_SCN_DEBUG_TYPES]) {
 		err = drgn_dwarf_index_read_cus(state, file,
@@ -2951,8 +2955,9 @@ drgn_dwarf_info_update_index(struct drgn_dwarf_index_state *state)
 			Dwarf_Off abbrev_off = 0;
 			dwarf_cu_die(pending_cu->cudie, &tmp, NULL, &abbrev_off, NULL, NULL, NULL, NULL);
 
-			Dwarf_Off abbrev_contrib_offset = 0;
+			Dwarf_Off abbrev_contrib_offset = 0, str_contrib_offset = 0;
 			dwarf_cu_abbrev_contrib_offset(pending_cu->cudie, &abbrev_contrib_offset);
+			dwarf_cu_str_off(pending_cu->cudie, &str_contrib_offset);
 
 			cus->data[cus->size++] = (struct drgn_dwarf_index_cu){
 				.file = pending_cu->file,
@@ -2966,7 +2971,7 @@ drgn_dwarf_info_update_index(struct drgn_dwarf_index_state *state)
 					array_size(no_file_name_hashes),
 				.num_abbrev_decls = abbrev_off,
 				.abbrev_contrib_offset = abbrev_contrib_offset,
-				.str_offsets = dwarf_cu_str_off(pending_cu->cudie),
+				.str_offsets = (const char *)str_contrib_offset,
 			};
 		}
 	}
@@ -8770,6 +8775,7 @@ static struct drgn_error *drgn_location_descriptions_from_attribute(
 			err = &drgn_enomem;
 			break;
 		}
+		memset(location, 0, sizeof(*location));
 		offset = dwarf_getlocations(&attr, offset, &base,
 					    &location->start, &location->end,
 					    &(Dwarf_Op *){0}, &(size_t){0});
