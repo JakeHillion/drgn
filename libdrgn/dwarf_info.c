@@ -3565,7 +3565,7 @@ struct drgn_error *drgn_module_find_dwarf_scopes(struct drgn_module *module,
 
 	/* Now find DIEs containing the PC. */
 	size_t subtree = 1;
-	while (!(err = drgn_dwarf_die_iterator_next(&it, true, subtree))) {
+	while (!(err = drgn_dwarf_die_iterator_next(&it, subtree == it.dies.size, subtree))) {
 		int r = dwarf_haspc(&it.dies.data[it.dies.size - 1], pc);
 		if (r > 0) {
 			subtree = it.dies.size;
@@ -4016,7 +4016,7 @@ static struct drgn_error *drgn_dwarf4_split_location_list(struct drgn_elf_file *
 					 "loclist is out of bounds");
 	}
 	Dwarf_Off locs_base = 0;
-	assert(dwarf_cu_locs_base(cu_die->cu, &locs_base) == 0);
+	dwarf_cu_locs_base(cu_die->cu, &locs_base);
 	buffer.bb.pos += offset;
 	buffer.bb.pos += locs_base;
 
