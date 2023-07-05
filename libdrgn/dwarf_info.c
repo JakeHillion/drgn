@@ -3493,10 +3493,10 @@ struct drgn_error *drgn_module_find_dwarf_scopes(struct drgn_module *module,
 	pc -= module->debug_file_bias;
 
 	/* First, try to get the CU containing the PC. */
-	Dwarf_Aranges *aranges;
-	size_t naranges;
-	if (dwarf_getaranges(dwarf, &aranges, &naranges) < 0)
-		return drgn_error_libdw();
+	Dwarf_Aranges *aranges = NULL;
+	size_t naranges = 0;
+	if (dwarf_getaranges(dwarf, &aranges, &naranges) < 0) {}
+		// return drgn_error_libdw();
 
   /* Lookup the pc in the aranges to quickly locate the CU. */
 	Dwarf_Off offset = 0;
