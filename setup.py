@@ -397,9 +397,6 @@ def get_version():
     version = public_version + local_version
     # Update version.py if necessary.
     new_version_py = f'__version__ = "{version}"\n'
-    if new_version_py != version_py:
-        with open("drgn/internal/version.py", "w") as f:
-            f.write(new_version_py)
     return version
 
 
