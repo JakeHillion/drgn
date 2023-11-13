@@ -1371,6 +1371,12 @@ static struct drgn_error *read_strx(struct drgn_dwarf_index_cu_buffer *buffer,
 			strp32 = bswap_32(strp32);
 		strp = strp32;
 	}
+	if (strp > 0) {
+		while (strp < buffer->cu->file->scn_data[DRGN_SCN_DEBUG_STR]->d_size &&
+				   *(char *)(buffer->cu->file->scn_data[DRGN_SCN_DEBUG_STR]->d_buf + strp - 1) != '\0') {
+					strp += 0x100000000ULL;
+				}
+	}
 	if (strp >= buffer->cu->file->scn_data[DRGN_SCN_DEBUG_STR]->d_size) {
 		return binary_buffer_error(&buffer->bb,
 					   "indirect string is out of bounds");
@@ -1728,7 +1734,17 @@ read_lnp_string(struct drgn_elf_file_section_buffer *buffer, bool is_64_bit,
 		data = buffer->file->scn_data[
 			form == DW_FORM_line_strp ?
 			DRGN_SCN_DEBUG_LINE_STR : DRGN_SCN_DEBUG_STR];
-		if (!data || strp >= data->d_size) {
+		if (!data) {
+			return binary_buffer_error(&buffer->bb,
+						   "DW_LNCT_path is out of bounds");
+		}
+		if (strp > 0) {
+			while (strp < data->d_size &&
+						*(char *)(data->d_buf + strp - 1) != '\0') {
+				strp += 0x100000000ULL;
+			}
+		}
+		if (strp >= data->d_size) {
 			return binary_buffer_error(&buffer->bb,
 						   "DW_LNCT_path is out of bounds");
 		}
@@ -2143,6 +2159,12 @@ sibling:
 					return err;
 				strp_scn = cu->file->scn_data[DRGN_SCN_DEBUG_LINE_STR];
 comp_dir_strp:
+				if (tmp > 0) {
+					while (tmp < strp_scn->d_size &&
+								*(char *)(strp_scn->d_buf + tmp - 1) != '\0') {
+						tmp += 0x100000000ULL;
+					}
+				}
 				if (tmp >= strp_scn->d_size) {
 					return binary_buffer_error(&buffer->bb,
 								   "DW_AT_comp_dir is out of bounds");
@@ -2626,6 +2648,11 @@ sibling:
 				if ((err = binary_buffer_next_u64(&buffer->bb, &tmp)))
 					return err;
 strp:
+				if (tmp > 0) {
+					while (tmp < debug_str->d_size && *(char*)(debug_str->d_buf + tmp - 1) != '\0') {
+						tmp += 0x100000000ULL;
+					}
+				}
 				if (tmp >= debug_str->d_size) {
 					return binary_buffer_error(&buffer->bb,
 								   "DW_AT_name is out of bounds");
@@ -2671,6 +2698,11 @@ name_strx:
 				if ((err = binary_buffer_next_u64(&buffer->bb, &tmp)))
 					return err;
 name_alt_strp:
+				if (tmp > 0) {
+					while (tmp < cu->file->alt_debug_str_data->d_size && *(char*)(cu->file->alt_debug_str_data->d_buf + tmp - 1) != '\0') {
+						tmp += 0x100000000ULL;
+					}
+				}
 				if (tmp >= cu->file->alt_debug_str_data->d_size) {
 					return binary_buffer_error(&buffer->bb,
 								   "DW_AT_name is out of bounds");
