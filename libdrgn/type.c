@@ -13,6 +13,7 @@
 #include "program.h"
 #include "type.h"
 #include "util.h"
+#include "string_builder.h"
 
 const char * const drgn_type_kind_spelling[] = {
 	[DRGN_TYPE_VOID] = "void",
@@ -662,16 +663,50 @@ drgn_compound_type_create(struct drgn_compound_type_builder *builder,
 
 	struct drgn_type *type = malloc(sizeof(*type));
 	if (!type)
-		return &drgn_enomem;
-	if (!drgn_typep_vector_append(&prog->created_types, &type)) {
-		free(type);
-		return &drgn_enomem;
-	}
+		goto enomem;
+	if (!drgn_typep_vector_append(&prog->created_types, &type))
+		goto enomem;
 
 	drgn_type_member_vector_shrink_to_fit(&builder->members);
 	drgn_type_member_function_vector_shrink_to_fit(&builder->functions);
 	drgn_type_template_parameter_vector_shrink_to_fit(&builder->template_builder.parameters);
 	drgn_type_template_parameter_vector_shrink_to_fit(&builder->parents_builder.parameters);
+
+	if (builder->template_builder.parameters.size > 0 && strchr(tag, '<') == NULL) {
+		// We must reconstruct the full name using the template parameters.
+		// This happens when we use -gsimple-template-names to reduce the size of the .debug_str table.
+		struct string_builder full_tag = {};
+		if (!string_builder_appendf(&full_tag, "%s<", tag))
+			goto enomem;
+
+		for (size_t i = 0; i < builder->template_builder.parameters.size; i++) {
+			if (i > 0) {
+				if (!string_builder_append(&full_tag, ", "))
+					goto enomem;
+			}
+
+			struct drgn_qualified_type qtype = {};
+			err = drgn_template_parameter_type(&builder->template_builder.parameters.data[i], &qtype);
+			if (err)
+				goto error;
+
+			if (drgn_type_has_tag(qtype.type)) {
+				if (!string_builder_append(&full_tag, drgn_type_tag(qtype.type)))
+					goto enomem;
+			} else if (drgn_type_has_name(qtype.type)) {
+				if (!string_builder_append(&full_tag, drgn_type_name(qtype.type)))
+					goto enomem;
+			} else {
+				// ooops
+				puts("No tage or name :(");
+			}
+		}
+
+		if (!string_builder_appendc(&full_tag, '>'))
+			goto enomem;
+
+		tag = string_builder_null_terminate(&full_tag);
+	}
 
 	type->_private.kind = builder->kind;
 	type->_private.is_complete = is_complete;
@@ -693,6 +728,14 @@ drgn_compound_type_create(struct drgn_compound_type_builder *builder,
 	type->_private.language = lang ? lang : drgn_program_language(prog);
 	*ret = type;
 	return NULL;
+
+enomem:
+	err = &drgn_enomem;
+error:
+	if (type) {
+		free(type);
+	}
+	return err;
 }
 
 DEFINE_VECTOR_FUNCTIONS(drgn_type_enumerator_vector)
