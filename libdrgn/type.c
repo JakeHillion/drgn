@@ -697,8 +697,7 @@ drgn_compound_type_create(struct drgn_compound_type_builder *builder,
 				if (!string_builder_append(&full_tag, drgn_type_name(qtype.type)))
 					goto enomem;
 			} else {
-				// ooops
-				puts("No tage or name :(");
+				// TODO: What should we do?
 			}
 		}
 
