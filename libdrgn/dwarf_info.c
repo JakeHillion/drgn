@@ -9266,7 +9266,12 @@ drgn_type_fully_qualified_name(struct drgn_type *type, char **str_ret, size_t *l
 		      i == num_ancestors))
 			continue;
 		const char *name;
-		err = drgn_dwarf_die_name(current, &name);
+		// For the `type` itself, we want to use the reconstructed name
+		// in case the -gsimple-template-names option was enabled.
+		if (i == num_ancestors)
+			name = type->_private.name;
+		else
+			err = drgn_dwarf_die_name(current, &name);
 		if (err)
 			goto err;
 		if (!string_builder_appendf(&fully_qualified_name, "%s%s",
