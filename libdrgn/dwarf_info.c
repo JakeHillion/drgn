@@ -9262,18 +9262,18 @@ drgn_type_fully_qualified_name(struct drgn_type *type, char **str_ret, size_t *l
 	for (size_t i = 0; i <= num_ancestors; i++) {
 		Dwarf_Die *current = &ancestors[i];
 		int tag = dwarf_tag(current);
-		if (!(tag == DW_TAG_namespace || tag == DW_TAG_class_type ||
+		if (!(tag == DW_TAG_namespace || tag == DW_TAG_class_type || tag == DW_TAG_structure_type ||
 		      i == num_ancestors))
 			continue;
-		const char *name;
-		// For the `type` itself, we want to use the reconstructed name
-		// in case the -gsimple-template-names option was enabled.
-		if (i == num_ancestors)
-			name = type->_private.name;
-		else
-			err = drgn_dwarf_die_name(current, &name);
+
+		// We want to use the reconstructed name in case
+		// -gsimple-template-names option was enabled.
+		struct drgn_qualified_type current_type = {};
+		err = drgn_type_from_dwarf(type->_private.program->dbinfo, type->_private.file, current, &current_type);
 		if (err)
 			goto err;
+
+		const char *name = current_type.type->_private.name;
 		if (!string_builder_appendf(&fully_qualified_name, "%s%s",
 						fully_qualified_name.len > 0 ? "::" : "", name)) {
 			err = &drgn_enomem;
