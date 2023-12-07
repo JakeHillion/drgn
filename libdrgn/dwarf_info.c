@@ -5682,7 +5682,7 @@ drgn_compound_type_from_dwarf(struct drgn_debug_info *dbinfo,
 			break;
 		case DW_TAG_inheritance:
 			err = maybe_parse_template_parameter(dbinfo, file, &child,
-							     &builder.parents_builder);
+							     &builder.parents_builder, &name_builder);
 			if (err)
 				goto err;
 			// Parse inheritance offset
@@ -5722,7 +5722,7 @@ drgn_compound_type_from_dwarf(struct drgn_debug_info *dbinfo,
 		goto err;
 	}
 
-	err = drgn_compound_type_create(&builder, tag, size, !declaration, lang,
+	err = drgn_compound_type_create(&builder, tag, size, !declaration, virtuality, lang,
 					ret);
 	if (err)
 		goto err;
